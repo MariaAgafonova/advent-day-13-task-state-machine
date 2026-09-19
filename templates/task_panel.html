@@ -1,0 +1,71 @@
+<style>
+    .task-workspace { margin-bottom: 20px; border-color: #3b82f6; background: linear-gradient(120deg, #172554, #111827 58%); }
+    .task-intro { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .task-intro h2 { margin-bottom: 6px; }
+    .task-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin: 16px 0; }
+    .task-create input { width: 100%; }
+    .task-layout { display: grid; grid-template-columns: minmax(220px, .38fr) minmax(0, 1fr); gap: 20px; }
+    .task-sidebar select { width: 100%; margin-bottom: 10px; }
+    .task-flow { display: flex; gap: 7px; flex-wrap: wrap; margin: 8px 0 14px; }
+    .task-flow span { padding: 5px 11px; border-radius: 20px; font-size: .8rem; background: #1e293b; color: #94a3b8; }
+    .task-flow .current { background: #2563eb; color: white; }
+    .task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    .task-workspace button:disabled { opacity: .45; cursor: default; }
+    .task-step { border-left: 3px solid #475569; padding: 12px; background: #0f172a; margin: 8px 0; border-radius: 6px; }
+    .task-step.completed { border-color: #34d399; }
+    .task-step.in_progress { border-color: #60a5fa; }
+    .task-step.failed { border-color: #f87171; }
+    .task-step pre { max-height: 220px; font-size: .85rem; }
+    #task-goal-title, #task-next, #task-message, #task-final { overflow-wrap: anywhere; white-space: pre-wrap; }
+    #task-goal-title { font-size: 1.15rem; margin-bottom: 8px; }
+    #task-message { color: #fbbf24; min-height: 1.2em; }
+    #task-final { padding: 16px; border: 1px solid #059669; border-radius: 8px; background: #052e2b; }
+    .task-question { padding: 12px; border: 1px solid #6366f1; border-radius: 8px; }
+    .task-question input { width: 100%; margin: 8px 0; }
+    .task-history { font-size: .85rem; color: #cbd5e1; line-height: 1.8; }
+    @media (max-width: 700px) { .task-layout, .task-create { grid-template-columns: 1fr; } }
+</style>
+<section class="panel task-workspace" aria-labelledby="task-heading">
+    <div class="task-intro">
+        <div><h2 id="task-heading">Задачи агента</h2><span class="muted">Один шаг за раз. Можно остановиться и продолжить позже.</span></div>
+        <span id="task-mode" class="tag"></span>
+    </div>
+    <form id="task-create-form" class="task-create">
+        <label>Новая задача<input id="task-goal" maxlength="3000" placeholder="Подготовить краткое описание вакансии Android-разработчика" required></label>
+        <button type="submit">Создать задачу</button>
+    </form>
+    <div class="task-layout">
+        <aside class="task-sidebar">
+            <label>Сохранённые задачи<select id="task-select" aria-label="Выбрать задачу"></select></label>
+            <button id="task-refresh" type="button" class="secondary">Обновить список</button>
+            <p id="task-progress" class="muted"></p>
+            <p id="task-id" class="muted"></p>
+            <p class="muted">Закрытие страницы и очистка чата сохраняют задачи.</p>
+        </aside>
+        <div>
+            <p id="task-empty" class="muted">Создайте задачу, чтобы начать планирование.</p>
+            <div id="task-detail" class="hidden">
+                <h3 id="task-goal-title"></h3>
+                <div id="task-flow" class="task-flow" aria-label="Этапы задачи"></div>
+                <p id="task-next"></p>
+                <div class="task-actions">
+                    <button id="task-continue" type="button">Продолжить</button>
+                    <button id="task-pause" type="button" class="secondary">Пауза</button>
+                    <button id="task-resume" type="button">Возобновить</button>
+                </div>
+                <form id="task-answer-form" class="task-question hidden">
+                    <label id="task-question-label" for="task-answer"></label>
+                    <input id="task-answer" maxlength="6000" placeholder="Ваш ответ" required>
+                    <button type="submit">Сохранить ответ и продолжить</button>
+                </form>
+                <div id="task-steps"></div>
+                <p id="task-final" class="hidden"></p>
+                <details><summary>Собранные данные и критерии готовности</summary><pre id="task-inputs"></pre></details>
+                <details open><summary>Журнал переходов</summary><ol id="task-transitions" class="task-history"></ol></details>
+                <details><summary>Сохранённое состояние JSON</summary><pre id="task-json"></pre></details>
+            </div>
+        </div>
+    </div>
+    <p id="task-message" role="status" aria-live="polite"></p>
+</section>
+<script src="{{ url_for('static', filename='tasks.js') }}" defer></script>

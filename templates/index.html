@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>День 13 — состояние задачи</title>
+    <style>
+        :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+        body { max-width: 1440px; margin: 0 auto; padding: 22px 16px 56px; background: #0f172a; color: #f8fafc; }
+        .page-header { margin-bottom: 16px; }
+        .page-header h1 { margin-bottom: 6px; }
+        .app-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, .85fr); gap: 16px; align-items: start; }
+        .chat-column { display: flex; flex-direction: column; }
+        .compare-panel { order: 1; }
+        .chat-panel { order: 2; }
+        #branch-answers-panel { order: 3; }
+        .chat-column, .settings-column { min-width: 0; display: grid; gap: 16px; align-content: start; }
+        .app-layout .panel { margin-top: 0; }
+        .chat-panel { min-height: calc(100vh - 150px); display: flex; flex-direction: column; }
+        .chat-panel #chat { flex: 1; min-height: 320px; max-height: calc(100vh - 330px); }
+        .panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .panel-heading h2 { margin-bottom: 0; }
+        .settings-column .controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .settings-column .memory-grid { grid-template-columns: 1fr; }
+        .settings-column .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .memory-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end; }
+        .memory-actions label { grid-column: 1 / -1; }
+        h1, h2, h3 { margin-top: 0; } p, .muted { color: #cbd5e1; }
+        .panel { margin-top: 16px; padding: 16px; border: 1px solid #334155; border-radius: 14px; background: #111827; }
+        .controls, .columns { display: grid; gap: 10px; }
+        .controls { grid-template-columns: repeat(5, minmax(0, 1fr)); align-items: end; }
+        .columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+        .metric { padding: 12px; border-radius: 10px; background: #1e293b; }
+        .metric strong { display: block; font-size: 1.2rem; color: #f8fafc; }
+        .metric span { color: #94a3b8; font-size: .78rem; }
+        .table-wrap { overflow: auto; max-height: 380px; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: .8rem; white-space: nowrap; }
+        th, td { padding: 8px; border-bottom: 1px solid #334155; text-align: right; }
+        th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+        .log-list { display: grid; gap: 8px; max-height: 620px; overflow: auto; }
+        .log-entry { border: 1px solid #334155; border-radius: 9px; background: #0b1220; }
+        .log-entry summary { cursor: pointer; padding: 10px 12px; color: #cbd5e1; }
+        .log-entry pre { margin: 0; border-radius: 0; border-top: 1px solid #334155; max-height: 320px; }
+        .branch-list { display: grid; gap: 6px; margin-top: 10px; }
+        .branch-item { padding: 9px 11px; border: 1px solid #334155; border-radius: 8px; background: #0b1220; }
+        .branch-item.active { border-color: #60a5fa; }
+        .branch-graph { display: grid; gap: 14px; overflow: auto; padding: 8px 4px 14px; }
+        .graph-node { position: relative; min-width: 190px; padding: 10px 12px; border: 1px solid #475569; border-radius: 10px; background: #1e293b; }
+        .graph-node.active { border-color: #60a5fa; box-shadow: 0 0 0 1px #60a5fa inset; }
+        .graph-node.checkpoint { background: #172554; border-color: #6366f1; }
+        .graph-node strong, .graph-node span { display: block; }
+        .graph-node span { margin-top: 4px; color: #94a3b8; font-size: .78rem; }
+        .graph-node p { margin: 7px 0 0; color: #cbd5e1; font-size: .82rem; white-space: pre-wrap; }
+        .graph-node button { margin-top: 8px; padding: 6px 8px; font-size: .78rem; }
+        .graph-children { display: flex; flex-wrap: wrap; gap: 12px; margin-left: 24px; padding: 14px 0 0 22px; border-left: 2px solid #334155; }
+        .graph-group { display: grid; gap: 8px; }
+        .branch-answers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .compare-form { display: grid; grid-template-columns: minmax(0, 1fr) repeat(2, minmax(150px, .35fr)) auto; gap: 8px; align-items: end; }
+        .compare-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+        .compare-card { min-width: 0; padding: 13px; border: 1px solid #334155; border-radius: 10px; background: #0b1220; }
+        .compare-card h3 { margin-bottom: 4px; }
+        .compare-meta { color: #94a3b8; font-size: .78rem; }
+        .compare-turn { margin-top: 12px; padding-top: 10px; border-top: 1px solid #334155; }
+        .compare-question { color: #cbd5e1; font-size: .86rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .compare-answer { margin-top: 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .answer-card { padding: 13px; border: 1px solid #334155; border-radius: 10px; background: #0b1220; }
+        .answer-card.active { border-color: #60a5fa; }
+        .answer-card h3 { margin-bottom: 4px; }
+        .answer-card .answer-meta { color: #94a3b8; font-size: .78rem; }
+        .answer-output { margin-top: 9px; padding: 10px; border-radius: 8px; background: #1e293b; white-space: pre-wrap; }
+        .memory-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+        .memory-card { min-width: 0; padding: 13px; border: 1px solid #334155; border-radius: 10px; background: #0b1220; }
+        .memory-card h3 { margin-bottom: 4px; }
+        .memory-card .memory-meta { color: #94a3b8; font-size: .78rem; }
+        .memory-entry { margin-top: 8px; padding: 9px; border-left: 3px solid #475569; background: #1e293b; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .memory-entry strong { color: #bfdbfe; }
+        .memory-entry small { display: block; margin-top: 4px; color: #94a3b8; }
+        .memory-card.short_term { border-color: #0e7490; } .memory-card.working { border-color: #7c3aed; } .memory-card.long_term { border-color: #15803d; }
+        label { display: grid; gap: 5px; color: #cbd5e1; font-size: .88rem; }
+        input, select, button { box-sizing: border-box; padding: 9px 10px; border: 1px solid #475569; border-radius: 8px; background: #1e293b; color: inherit; }
+        button { border: 0; cursor: pointer; font-weight: 600; background: #60a5fa; color: #0f172a; }
+        button.secondary { background: #475569; color: #fff; }
+        .hidden { display: none !important; }
+        pre, .scroll { overflow: auto; max-height: 330px; margin: 7px 0 0; padding: 11px; border-radius: 8px; background: #0b1220; color: #cbd5e1; white-space: pre-wrap; }
+        #chat { display: grid; gap: 8px; max-height: 410px; overflow: auto; margin: 12px 0; }
+        .message { max-width: 82%; padding: 10px 13px; border-radius: 12px; white-space: pre-wrap; }
+        .user { justify-self: end; background: #1d4ed8; } .assistant { justify-self: start; background: #334155; }
+        #chat-form { display: grid; grid-template-columns: minmax(175px, .38fr) minmax(0, 1fr) auto auto; gap: 8px; align-items: end; }
+        #chat-form label { font-size: .78rem; }
+        #memory-target { width: 100%; }
+        #question { min-width: 0; }
+        #mic-button { min-width: 46px; padding-inline: 10px; font-size: 1.05rem; }
+        #mic-button.recording { background: #f87171; color: #450a0a; animation: pulse-mic 1.2s ease-in-out infinite; }
+        #mic-button:disabled { cursor: not-allowed; opacity: .55; }
+        @keyframes pulse-mic { 50% { box-shadow: 0 0 0 5px rgb(248 113 113 / 20%); } }
+        #error { min-height: 1.4em; color: #fca5a5; } .tag { color: #93c5fd; }
+        @media (max-width: 1100px) { .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 960px) { .app-layout { grid-template-columns: 1fr; } .chat-panel { min-height: auto; } .chat-panel #chat { max-height: 520px; } }
+        @media (max-width: 900px) { .controls, .columns, .memory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .settings-column .memory-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 700px) { .compare-form, .compare-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 520px) { .controls, .columns, .memory-grid, .settings-column .memory-grid, .memory-actions, #chat-form { grid-template-columns: 1fr; } .memory-actions label { grid-column: auto; } }
+    </style>
+</head>
+<body>
+    <header class="page-header">
+        <h1>День 13 — состояние задачи</h1>
+        <p>Планируйте, выполняйте и проверяйте результат. Прогресс сохраняется между запусками.</p>
+    </header>
+    {% include "task_panel.html" %}
+
+    <main class="app-layout">
+        <section class="chat-column">
+            <section class="panel chat-panel">
+                <div class="panel-heading">
+                    <h2>Диалог</h2>
+                    <button id="clear-chat" class="secondary" type="button">Очистить чат</button>
+                </div>
+                <p id="api-status" class="muted"></p>
+                <div id="chat"></div>
+                <div id="error"></div>
+                <form id="chat-form">
+                    <label>Куда сохранить сообщение
+                        <select id="memory-target">
+                            <option value="working">Working memory</option>
+                            <option value="long_term">Long-term memory</option>
+                            <option value="short_term" selected>Только short-term</option>
+                        </select>
+                    </label>
+                    <input id="question" autocomplete="off" placeholder="Введите сообщение..." required>
+                    <button id="mic-button" class="secondary" type="button" aria-label="Записать голосовое сообщение" aria-pressed="false" title="Голосовой ввод">🎙️</button>
+                    <button type="submit">Отправить</button>
+                </form>
+                <p id="mic-status" class="muted"></p>
+            </section>
+
+            <section id="branch-answers-panel" class="panel">
+                <h2>Ответы по веткам</h2>
+                <div id="branch-answers" class="branch-answers"></div>
+            </section>
+
+            <section class="panel compare-panel">
+                <div class="panel-heading">
+                    <h2>Сравнить ответы профилей</h2>
+                    <button id="clear-compare" class="secondary" type="button">Очистить</button>
+                </div>
+                <p class="muted">Один и тот же запрос отправляется в два окна. Следующий запрос продолжит оба диалога.</p>
+                <form id="compare-form" class="compare-form">
+                    <label>Общий запрос<input id="compare-question" autocomplete="off" placeholder="Объясни, как добавить память в AI-агента" required></label>
+                    <label>Левое окно<select id="compare-left-profile"></select></label>
+                    <label>Правое окно<select id="compare-right-profile"></select></label>
+                    <button type="submit">Сравнить</button>
+                </form>
+                <p id="compare-status" class="muted"></p>
+                <div id="compare-results" class="compare-grid"></div>
+            </section>
+        </section>
+
+        <aside class="settings-column">
+            <section class="panel profile-panel">
+                <h2>Профиль пользователя</h2>
+                <p class="muted">Настройки сохраняются отдельно от истории и memory. Текущий запрос имеет приоритет.</p>
+                <div class="controls">
+                    <label>Профиль для демонстрации
+                        <select id="profile-select"></select>
+                    </label>
+                    <button id="select-profile" type="button">Загрузить профиль</button>
+                </div>
+                <div class="controls" style="margin-top: 10px">
+                    <label>Язык<input id="profile-language" autocomplete="off"></label>
+                    <label>Формат<input id="profile-format" autocomplete="off"></label>
+                    <label>Длина ответа<input id="profile-length" autocomplete="off"></label>
+                    <label>Стиль<input id="profile-style" autocomplete="off"></label>
+                </div>
+                <button id="save-profile" type="button" style="margin-top: 10px">Сохранить настройки</button>
+                <p id="profile-status" class="muted"></p>
+                <pre id="profile-details">{}</pre>
+            </section>
+
+            <section class="panel memory-panel">
+                <h2>Память агента</h2>
+                <div class="memory-actions">
+                    <label>Контекст ответа
+                        <select id="memory-context">
+                            <option value="working">Working + Long-term</option>
+                            <option value="long_term">Только Long-term</option>
+                            <option value="short_term" selected>Short-term + Working + Long-term</option>
+                        </select>
+                    </label>
+                    <label>Хранилище памяти
+                        <select id="memory-storage">
+                            <option value="in_memory">Только текущий запуск</option>
+                            <option value="json_file">JSON между сессиями</option>
+                        </select>
+                    </label>
+                    <button id="save-config" type="button">Применить настройки</button>
+                    <button id="reset" class="secondary" type="button">Очистить всё</button>
+                </div>
+                <p id="memory-policy" class="muted"></p>
+                <div id="memory-summary" class="metrics"></div>
+                <div id="memory-layers" class="memory-grid" style="margin-top: 12px"></div>
+                <div class="controls" style="margin-top: 12px">
+                    <button id="complete-task" type="button">Завершить задачу и очистить working</button>
+                </div>
+                <p id="memory-status" class="muted"></p>
+                <details style="margin-top: 10px">
+                    <summary class="muted">Последнее извлечение и анализ</summary>
+                    <pre id="memory-selection">{}</pre>
+                </details>
+            </section>
+
+            <section class="panel strategy-panel">
+                <h2>Стратегия для контекста <span id="strategy-tag" class="tag"></span></h2>
+                <div class="controls">
+                    <label>Стратегия
+                        <select id="strategy">
+                            <option value="sliding_window">Sliding Window</option>
+                            <option value="facts">Sticky Facts</option>
+                            <option value="branching">Branching</option>
+                            <option value="retrieval">Retrieval / RAG</option>
+                        </select>
+                    </label>
+                    <label id="recent-control">Последние N сообщений<input id="recent-limit" type="number" min="1"></label>
+                    <label id="top-k-control">Retrieval top-K<input id="top-k" type="number" min="1"></label>
+                    <label id="min-score-control">Минимальный score<input id="min-score" type="number" min="0" step="0.01"></label>
+                </div>
+                <p id="config-status" class="muted"></p>
+            </section>
+
+            <section id="branching-panel" class="panel">
+                <h2>Branching</h2>
+                <div class="controls">
+                    <label>Checkpoint<input id="checkpoint-name" placeholder="После базового ТЗ"></label>
+                    <button id="create-checkpoint" type="button">Создать checkpoint</button>
+                    <label>Ветка<input id="branch-name" placeholder="MVP"></label>
+                    <select id="checkpoint-select"></select>
+                    <button id="create-branch" type="button">Создать ветку</button>
+                </div>
+                <div class="controls" style="margin-top: 10px">
+                    <label>Активная ветка<select id="branch-select"></select></label>
+                    <button id="switch-branch" type="button">Переключить ветку</button>
+                </div>
+                <p id="branch-status" class="muted"></p>
+                <div id="saved-branches" class="branch-list"></div>
+            </section>
+
+            <section id="strategy-state-panel" class="panel">
+                <h2>Состояние стратегии</h2>
+                <div class="columns">
+                    <div id="facts-panel"><h3>Facts</h3><pre id="facts">{}</pre></div>
+                    <div id="retrieved-panel"><h3>Retrieved</h3><pre id="retrieved">[]</pre></div>
+                    <div id="branches-panel"><h3>Граф веток</h3><div id="branch-graph" class="branch-graph"></div></div>
+                </div>
+            </section>
+
+            <section class="panel token-panel">
+                <h2>Расход токенов и стоимость</h2>
+                <div id="metrics-cards" class="metrics"></div>
+                <div id="analytics-table" class="table-wrap"></div>
+                <details style="margin-top: 10px">
+                    <summary class="muted">Полный JSON аналитики</summary>
+                    <pre id="analytics">{}</pre>
+                </details>
+            </section>
+
+            <section class="panel log-panel">
+                <h2>Логи запросов</h2>
+                <p class="muted">Основной запрос, использованный контекст, токены, стоимость и auxiliary-вызовы Facts.</p>
+                <div id="request-logs" class="log-list"></div>
+            </section>
+        </aside>
+    </main>
+
+    <script>
+        let state = {{ state | tojson }};
+        const $ = id => document.getElementById(id);
+        const json = value => JSON.stringify(value, null, 2);
+        const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'}[character]));
+        function addMessage(role, content) {
+            const element = document.createElement('div'); element.className = `message ${role}`;
+            element.textContent = content; $('chat').appendChild(element); $('chat').scrollTop = $('chat').scrollHeight;
+        }
+        function render(next) {
+            state = next; const config = state.config; const strategy = state.strategy || {};
+            $('strategy-tag').textContent = config.strategy;
+            $('strategy').value = config.strategy; $('recent-limit').value = config.recent_limit;
+            $('top-k').value = config.retrieval_top_k; $('min-score').value = config.retrieval_min_score;
+            $('memory-storage').value = config.memory_storage;
+            if (['working', 'long_term', 'short_term'].includes(config.memory_context_target)) $('memory-context').value = config.memory_context_target;
+            updateStrategyVisibility(config.strategy);
+            $('facts').textContent = json(strategy.facts || {});
+            $('retrieved').textContent = json(strategy.retrieved || []);
+            renderBranchGraph(strategy.branches || [], strategy.checkpoints || [], strategy.active_branch || 'main');
+            renderBranchAnswers(strategy.branches || [], strategy.active_branch || 'main');
+            renderAnalytics(state.analytics);
+            renderRequestLogs([...(state.logs || []), ...(state.comparison_logs || [])]);
+            renderMemory(state.memory || {}, state.memory_analysis || {}, config.memory_context_target);
+            renderProfile(state.user_profile || {}, state.available_profiles || []);
+            $('api-status').textContent = config.api_configured ? 'DeepSeek API настроен.' : 'Заполните .env для API-запросов.';
+            $('chat').replaceChildren(); (state.history || []).forEach(message => addMessage(message.role, message.content));
+            const checkpoints = strategy.checkpoints || [];
+            $('checkpoint-select').replaceChildren(...checkpoints.map(item => new Option(`${item.name} (${item.id})`, item.id)));
+            if (checkpoints.length) $('checkpoint-select').value = checkpoints[checkpoints.length - 1].id;
+            const branches = strategy.branches || [];
+            $('branch-select').replaceChildren(...branches.map(item => new Option(`${item.name} (${item.id})`, item.id)));
+            if (strategy.active_branch) $('branch-select').value = strategy.active_branch;
+            $('saved-branches').replaceChildren(...branches.map(item => {
+                const element = document.createElement('div');
+                element.className = `branch-item${item.id === strategy.active_branch ? ' active' : ''}`;
+                element.textContent = `${item.id === strategy.active_branch ? '● ' : ''}${item.name} · ${item.id}${item.parent_checkpoint_id ? ` · checkpoint: ${item.parent_checkpoint_id}` : ' · основная ветка'}`;
+                return element;
+            }));
+            $('branch-status').textContent = branches.length ? `Сохранено веток: ${branches.length}. Активная: ${strategy.active_branch || 'main'}.` : '';
+        }
+        function renderProfile(profileState, availableProfiles) {
+            const profile = profileState.profile || {};
+            const select = $('profile-select');
+            const profiles = availableProfiles.length ? availableProfiles : [profile];
+            select.replaceChildren(...profiles.map(item => new Option(`${item.id}${item.name ? ` — ${item.name}` : ''}`, item.id)));
+            if (profile.id) select.value = profile.id;
+            $('profile-language').value = profile.language || '';
+            $('profile-format').value = profile.preferredFormat || '';
+            $('profile-length').value = profile.responseLength || '';
+            $('profile-style').value = profile.responseStyle || '';
+            $('profile-details').textContent = json({
+                user_id: profileState.user_id,
+                profile_loaded: profileState.profile_loaded,
+                profile,
+                overrides: profileState.overrides || {},
+            });
+            renderCompareProfiles(availableProfiles);
+        }
+        function renderCompareProfiles(profiles) {
+            const left = $('compare-left-profile');
+            const right = $('compare-right-profile');
+            const previousLeft = left.value || 'beginner';
+            const previousRight = right.value || 'developer';
+            left.replaceChildren(...profiles.map(item => new Option(`${item.id}${item.name ? ` — ${item.name}` : ''}`, item.id)));
+            right.replaceChildren(...profiles.map(item => new Option(`${item.id}${item.name ? ` — ${item.name}` : ''}`, item.id)));
+            if (profiles.some(item => item.id === previousLeft)) left.value = previousLeft;
+            if (profiles.some(item => item.id === previousRight)) right.value = previousRight;
+        }
+        function renderCompareResults(payload) {
+            const container = $('compare-results');
+            container.replaceChildren();
+            ['left', 'right'].forEach(side => {
+                const result = payload[side] || {};
+                const card = document.createElement('article'); card.className = 'compare-card';
+                const heading = document.createElement('h3'); heading.textContent = `${side === 'left' ? 'Левое' : 'Правое'} окно · ${result.user_id || ''}`; card.append(heading);
+                const meta = document.createElement('div'); meta.className = 'compare-meta';
+                const profile = result.profile || {}; meta.textContent = `${profile.language || ''} · ${profile.expertiseLevel || ''} · ${profile.responseLength || ''} · ${profile.preferredFormat || ''}`; card.append(meta);
+                const turns = Array.isArray(result.turns) && result.turns.length
+                    ? result.turns
+                    : [{question: payload.question, answer: result.answer || result.error}];
+                turns.forEach((turn, index) => {
+                    const turnBlock = document.createElement('div'); turnBlock.className = 'compare-turn';
+                    const question = document.createElement('div'); question.className = 'compare-question'; question.textContent = `Запрос ${index + 1}: ${turn.question || ''}`; turnBlock.append(question);
+                    const answer = document.createElement('div'); answer.className = 'compare-answer'; answer.textContent = turn.answer || 'Ответ не получен'; turnBlock.append(answer);
+                    card.append(turnBlock);
+                });
+                container.append(card);
+            });
+        }
+        function renderMemory(memory, analysis, contextTarget) {
+            const labels = { short_term: 'Short-term · диалог', working: 'Working · текущая задача', long_term: 'Long-term · устойчивые данные' };
+            const contextLabels = { auto: 'все слои (auto)', short_term: 'short-term + working + long-term', working: 'working + long-term', long_term: 'только long-term' };
+            const counts = memory.counts || {};
+            $('memory-policy').textContent = `Хранилище: ${memory.storage_mode || 'in_memory'} · контекст ответа: ${contextLabels[contextTarget] || 'выбранный слой'}.`;
+            const summary = [['Short-term', counts.short_term || 0], ['Working', counts.working || 0], ['Long-term', counts.long_term || 0]];
+            $('memory-summary').replaceChildren(...summary.map(([label, value]) => {
+                const element = document.createElement('div'); element.className = 'metric';
+                const strong = document.createElement('strong'); strong.textContent = value;
+                const caption = document.createElement('span'); caption.textContent = label; element.append(strong, caption); return element;
+            }));
+            const layers = memory.layers || {};
+            $('memory-layers').replaceChildren(...['working', 'short_term', 'long_term'].map(layer => {
+                const card = document.createElement('article'); card.className = `memory-card ${layer}`;
+                const heading = document.createElement('h3'); heading.textContent = labels[layer]; card.append(heading);
+                const meta = document.createElement('div'); meta.className = 'memory-meta'; meta.textContent = `${(layers[layer] || []).length} записей · лимит ${memory.limits?.[layer] || '—'}`; card.append(meta);
+                const clearLayer = document.createElement('button'); clearLayer.type = 'button'; clearLayer.className = 'secondary'; clearLayer.textContent = 'Очистить слой'; clearLayer.style.marginTop = '8px';
+                clearLayer.onclick = async () => { try { const data = await post('/api/memory/clear-layer', {layer}); render(data.state); $('memory-status').textContent = 'Очищен слой ' + layer + ': ' + data.removed_entries + ' записей.'; } catch (error) { $('memory-status').textContent = error.message; } };
+                card.append(clearLayer);
+                (layers[layer] || []).forEach(entry => {
+                    const item = document.createElement('div'); item.className = 'memory-entry';
+                    const title = document.createElement('strong'); title.textContent = `${entry.kind} · ${Number(entry.importance || 0).toFixed(2)}`; item.append(title);
+                    const body = document.createElement('div'); body.textContent = entry.content; item.append(body);
+                    const details = document.createElement('small'); details.textContent = (entry.source === 'user:explicit' ? 'явно' : entry.source) + ' · ' + (entry.updated_at_iso || '') + (entry.expires_at_iso ? ' · TTL до ' + entry.expires_at_iso : ''); item.append(details);
+                    const forget = document.createElement('button'); forget.type = 'button'; forget.className = 'secondary'; forget.textContent = 'Забыть'; forget.style.marginTop = '7px';
+                    forget.onclick = async () => { try { render((await post('/api/memory/forget', { entry_id: entry.id })).state); } catch (error) { $('memory-status').textContent = error.message; } };
+                    item.append(forget); card.append(item);
+                });
+                if (!(layers[layer] || []).length) { const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = 'Нет сохранённых данных.'; card.append(empty); }
+                return card;
+            }));
+            const lastEvent = memory.last_event || {};
+            const targetLabels = {
+                auto: 'авто-классификация',
+                working: 'Working memory',
+                long_term: 'Long-term memory',
+                short_term: 'только short-term',
+                none: 'без semantic-записи',
+            };
+            $('memory-status').textContent = lastEvent.retention_mode
+                ? (lastEvent.explicit ? 'Явно выбрано: ' : 'Авто: ')
+                    + (targetLabels[lastEvent.retention_mode] || lastEvent.retention_mode) + '.'
+                : '';
+            $('memory-selection').textContent = json({ last_selection: memory.last_selection || [], last_event: memory.last_event || null, analysis });
+        }
+        function createGraphNode(title, subtitle, className, branch) {
+            const node = document.createElement('div'); node.className = `graph-node ${className || ''}${branch && branch.active ? ' active' : ''}`;
+            const heading = document.createElement('strong'); heading.textContent = title; node.append(heading);
+            const details = document.createElement('span'); details.textContent = subtitle; node.append(details);
+            if (branch && branch.latest_answer) {
+                const preview = document.createElement('p'); preview.textContent = branch.latest_answer.length > 180 ? `${branch.latest_answer.slice(0, 180)}…` : branch.latest_answer; node.append(preview);
+            }
+            if (branch) {
+                const button = document.createElement('button'); button.type = 'button'; button.textContent = branch.active ? 'Активна' : 'Открыть ветку'; button.disabled = branch.active;
+                button.onclick = async () => { try { render((await post('/api/branches/switch', { branch_id: branch.id })).state); } catch (error) { $('branch-status').textContent = error.message; } };
+                node.append(button);
+            }
+            return node;
+        }
+        function renderBranchGraph(branches, checkpoints, activeBranch) {
+            const graph = $('branch-graph'); graph.replaceChildren();
+            if (!branches.length) { const empty = document.createElement('span'); empty.className = 'muted'; empty.textContent = 'Ветки ещё не созданы.'; graph.append(empty); return; }
+            const main = branches.find(branch => branch.id === 'main');
+            if (main) {
+                main.active = main.id === activeBranch;
+                graph.append(createGraphNode(`${main.name} (main)`, `${main.message_count} сообщений · ${main.answer_count} ответов`, 'graph-root', main));
+            }
+            const checkpointGroups = checkpoints.map(checkpoint => {
+                const group = document.createElement('div'); group.className = 'graph-group';
+                group.append(createGraphNode(checkpoint.name, `${checkpoint.id} · ${checkpoint.message_count} сообщений`, 'checkpoint'));
+                const children = document.createElement('div'); children.className = 'graph-children';
+                branches.filter(branch => branch.parent_checkpoint_id === checkpoint.id).forEach(branch => {
+                    branch.active = branch.id === activeBranch;
+                    children.append(createGraphNode(branch.name, `${branch.id} · ${branch.message_count} сообщений · ${branch.answer_count} ответов`, '', branch));
+                });
+                if (children.childElementCount) group.append(children);
+                return group;
+            });
+            if (checkpointGroups.length) {
+                const children = document.createElement('div'); children.className = 'graph-children';
+                checkpointGroups.forEach(group => children.append(group)); graph.append(children);
+            }
+        }
+        function renderBranchAnswers(branches, activeBranch) {
+            const container = $('branch-answers'); container.replaceChildren();
+            branches.forEach(branch => {
+                const card = document.createElement('article'); card.className = `answer-card${branch.id === activeBranch ? ' active' : ''}`;
+                const heading = document.createElement('h3'); heading.textContent = branch.name; card.append(heading);
+                const meta = document.createElement('div'); meta.className = 'answer-meta'; meta.textContent = `${branch.id} · ${branch.answer_count} ответов${branch.id === activeBranch ? ' · активная' : ''}`; card.append(meta);
+                (branch.responses || []).forEach(response => {
+                    const output = document.createElement('div'); output.className = 'answer-output'; output.textContent = `Ответ ${response.number}:\n${response.content}`; card.append(output);
+                });
+                if (!branch.responses || !branch.responses.length) {
+                    const empty = document.createElement('div'); empty.className = 'muted'; empty.textContent = 'Ответов в этой ветке пока нет.'; card.append(empty);
+                }
+                container.append(card);
+            });
+        }
+        function renderAnalytics(analytics) {
+            const cards = [
+                ['Prompt tokens', analytics.total_prompt_tokens || 0],
+                ['Completion tokens', analytics.total_completion_tokens || 0],
+                ['Все токены с auxiliary', analytics.total_tokens_including_auxiliary || 0],
+                ['Auxiliary tokens', analytics.total_auxiliary_tokens || 0],
+                ['Общая стоимость', `$${Number(analytics.total_cost_usd || 0).toFixed(8)}`],
+                ['Средняя latency', `${Number(analytics.average_latency_seconds || 0).toFixed(3)} s`],
+            ];
+            $('metrics-cards').replaceChildren(...cards.map(([label, value]) => {
+                const element = document.createElement('div'); element.className = 'metric';
+                const strong = document.createElement('strong'); strong.textContent = value;
+                const caption = document.createElement('span'); caption.textContent = label;
+                element.append(strong, caption); return element;
+            }));
+            const rows = analytics.series || [];
+            $('analytics-table').innerHTML = rows.length
+                ? `<table><thead><tr><th>#</th><th>Стратегия</th><th>Ветка</th><th>Window</th><th>Dropped</th><th>Prompt</th><th>Completion</th><th>Total</th><th>Aux</th><th>Все токены</th><th>Full context</th><th>Saved</th><th>Cost</th><th>Latency</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.request_number)}</td><td>${escapeHtml(row.strategy)}</td><td>${escapeHtml(row.active_branch || '—')}</td><td>${escapeHtml(row.window_messages)}</td><td>${escapeHtml(row.discarded_messages)}</td><td>${escapeHtml(row.prompt_tokens)}</td><td>${escapeHtml(row.completion_tokens)}</td><td>${escapeHtml(row.total_tokens)}</td><td>${escapeHtml(row.auxiliary_total_tokens)}</td><td>${escapeHtml(row.total_tokens_including_auxiliary)}</td><td>${escapeHtml(row.full_prompt_tokens)}</td><td>${escapeHtml(row.saved_tokens)}</td><td>$${Number(row.cost_usd || 0).toFixed(8)}</td><td>${escapeHtml(row.elapsed_seconds)}s</td></tr>`).join('')}</tbody></table>`
+                : '<span class="muted">Запросов пока нет.</span>';
+        }
+        function renderRequestLogs(logs) {
+            const container = $('request-logs'); container.replaceChildren();
+            if (!logs.length) { const empty = document.createElement('span'); empty.className = 'muted'; empty.textContent = 'Логов пока нет.'; container.append(empty); return; }
+            [...logs].reverse().forEach(log => {
+                const details = document.createElement('details'); details.className = 'log-entry';
+                const summary = document.createElement('summary');
+                const metrics = log.token_metrics || {}; const status = log.error ? 'ERROR' : 'OK';
+                const scope = metrics.comparison ? `compare:${metrics.comparison_side} · profile=${metrics.profile_id || metrics.user_id || 'unknown'}` : 'main chat';
+                summary.textContent = `${scope} · #${log.request_number} · ${log.timestamp || ''} · ${metrics.strategy || 'unknown'} · branch=${metrics.active_branch || '—'} · ${status} · window=${metrics.window_messages || 0}, dropped=${metrics.discarded_messages || 0} · ${metrics.total_tokens_including_auxiliary || metrics.total_tokens || 0} tokens`;
+                details.append(summary);
+                const body = document.createElement('pre');
+                body.textContent = json({ elapsed_seconds: log.elapsed_seconds, token_metrics: metrics, error: log.error, request: log.request });
+                details.append(body);
+                if ((log.auxiliary_requests || []).length) {
+                    const auxiliary = document.createElement('pre'); auxiliary.textContent = json({ auxiliary_requests: log.auxiliary_requests }); details.append(auxiliary);
+                }
+                container.append(details);
+            });
+        }
+        function updateStrategyVisibility(strategy) {
+            const show = (id, visible) => $(id).classList.toggle('hidden', !visible);
+            show('recent-control', strategy === 'sliding_window' || strategy === 'facts');
+            show('top-k-control', strategy === 'retrieval');
+            show('min-score-control', strategy === 'retrieval');
+            show('branching-panel', strategy === 'branching');
+            show('strategy-state-panel', strategy !== 'sliding_window');
+            show('facts-panel', strategy === 'facts');
+            show('retrieved-panel', strategy === 'retrieval');
+            show('branches-panel', strategy === 'branching');
+            show('branch-answers-panel', strategy === 'branching');
+        }
+        async function post(url, body) {
+            const response = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) });
+            const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Request failed'); return data;
+        }
+        let speechRecognition = null;
+        let speechActive = false;
+        let speechFinalTranscript = '';
+        let speechDraft = '';
+
+        function setMicStatus(message) {
+            $('mic-status').textContent = message || '';
+        }
+
+        async function submitQuestion() {
+            const input = $('question');
+            const question = input.value.trim();
+            if (!question) return;
+            input.value = '';
+            $('error').textContent = '';
+            try {
+                const data = await post('/api/chat', {
+                    question,
+                    memory_target: $('memory-target').value,
+                    context_layer: $('memory-context').value,
+                });
+                render(data.state);
+                if (data.task_command) {
+                    addMessage('user', question);
+                    addMessage('assistant', data.answer);
+                    if (window.refreshTasks) await window.refreshTasks(data.task && data.task.task_id);
+                }
+            } catch (error) {
+                input.value = question;
+                $('error').textContent = error.message;
+            }
+        }
+
+        function setupSpeechInput() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const button = $('mic-button');
+            if (!SpeechRecognition) {
+                button.disabled = true;
+                button.title = 'Голосовой ввод не поддерживается этим браузером';
+                setMicStatus('Голосовой ввод доступен в Chrome или Edge.');
+                return;
+            }
+
+            speechRecognition = new SpeechRecognition();
+            speechRecognition.lang = 'ru-RU';
+            speechRecognition.interimResults = true;
+            speechRecognition.continuous = false;
+            speechRecognition.maxAlternatives = 1;
+
+            speechRecognition.onstart = () => {
+                speechActive = true;
+                button.classList.add('recording');
+                button.setAttribute('aria-pressed', 'true');
+                button.textContent = '⏹️';
+                setMicStatus('Слушаю… Нажмите ещё раз, чтобы остановить.');
+            };
+            speechRecognition.onresult = event => {
+                let finalText = '';
+                let interimText = '';
+                for (let index = 0; index < event.results.length; index += 1) {
+                    const transcript = event.results[index][0].transcript;
+                    if (event.results[index].isFinal) finalText += transcript;
+                    else interimText += transcript;
+                }
+                speechFinalTranscript = finalText.trim();
+                $('question').value = [speechDraft, finalText.trim(), interimText.trim()]
+                    .filter(Boolean).join(' ');
+            };
+            speechRecognition.onerror = event => {
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    setMicStatus('Нет доступа к микрофону. Разрешите его в настройках браузера.');
+                } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+                    setMicStatus('Не удалось распознать речь: ' + event.error);
+                }
+            };
+            speechRecognition.onend = () => {
+                speechActive = false;
+                button.classList.remove('recording');
+                button.setAttribute('aria-pressed', 'false');
+                button.textContent = '🎙️';
+                const question = [speechDraft, speechFinalTranscript].filter(Boolean).join(' ').trim();
+                speechDraft = '';
+                speechFinalTranscript = '';
+                if (question) {
+                    $('question').value = question;
+                    setMicStatus('Текст распознан, отправляю сообщение…');
+                    void submitQuestion();
+                } else {
+                    setMicStatus('');
+                }
+            };
+            button.onclick = () => {
+                if (speechActive) {
+                    speechRecognition.stop();
+                    return;
+                }
+                speechDraft = $('question').value.trim();
+                speechFinalTranscript = '';
+                try {
+                    speechRecognition.start();
+                } catch (error) {
+                    setMicStatus('Не удалось запустить микрофон. Попробуйте ещё раз.');
+                }
+            };
+        }
+
+        function notifySessionClosed() {
+            const body = new Blob(['{}'], {type: 'application/json'});
+            if (navigator.sendBeacon && navigator.sendBeacon('/api/session/close', body)) return;
+            void fetch('/api/session/close', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}', keepalive: true});
+        }
+
+        render(state);
+        setupSpeechInput();
+        window.addEventListener('pagehide', notifySessionClosed, {once: true});
+        $('strategy').onchange = event => updateStrategyVisibility(event.target.value);
+        $('save-config').onclick = async () => { try { const data = await post('/api/config', { strategy: $('strategy').value, recent_limit: Number($('recent-limit').value), retrieval_top_k: Number($('top-k').value), retrieval_min_score: Number($('min-score').value), memory_storage: $('memory-storage').value }); $('config-status').textContent = 'Конфигурация применена.'; render(data); } catch (error) { $('config-status').textContent = error.message; } };
+        $('select-profile').onclick = async () => { try { const data = await post('/api/profile/select', { user_id: $('profile-select').value }); $('profile-status').textContent = 'Профиль загружен. История предыдущего профиля очищена.'; render(data.state); } catch (error) { $('profile-status').textContent = error.message; } };
+        $('save-profile').onclick = async () => { try { const data = await fetch('/api/profile', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ fields: { language: $('profile-language').value, preferredFormat: $('profile-format').value, responseLength: $('profile-length').value, responseStyle: $('profile-style').value } }) }); const payload = await data.json(); if (!data.ok) throw new Error(payload.error || 'Profile update failed'); $('profile-status').textContent = 'Профиль сохранён в JSON.'; render(await (await fetch('/api/state')).json()); } catch (error) { $('profile-status').textContent = error.message; } };
+        $('clear-compare').onclick = async () => { try { await post('/api/compare/reset', {}); state.comparison_logs = []; $('compare-results').replaceChildren(); renderRequestLogs([...(state.logs || [])]); $('compare-status').textContent = 'Диалог сравнения очищен.'; } catch (error) { $('compare-status').textContent = error.message; } };
+        $('compare-form').onsubmit = async event => { event.preventDefault(); const question = $('compare-question').value.trim(); if (!question) return; $('compare-status').textContent = 'Отправляю один запрос двум профилям…'; try { const data = await post('/api/compare', { question, left_user_id: $('compare-left-profile').value, right_user_id: $('compare-right-profile').value }); state.comparison_logs = data.comparison_logs || []; renderCompareResults(data); renderRequestLogs([...(state.logs || []), ...state.comparison_logs]); $('compare-status').textContent = 'Готово: запросы выполнены с одинаковым текстом.'; } catch (error) { $('compare-status').textContent = error.message; } };
+        $('complete-task').onclick = async () => { try { const data = await post('/api/memory/complete-task'); render(data.state); $('memory-status').textContent = `Working memory очищена: ${data.removed_working_entries} записей.`; } catch (error) { $('memory-status').textContent = error.message; } };
+        $('create-checkpoint').onclick = async () => { try { render((await post('/api/checkpoints', { name: $('checkpoint-name').value })).state); $('branch-status').textContent = 'Checkpoint создан. Теперь можно создать ветку.'; } catch (error) { $('branch-status').textContent = error.message; } };
+        $('create-branch').onclick = async () => { const checkpointId = $('checkpoint-select').value; if (!checkpointId) { $('branch-status').textContent = 'Сначала создайте checkpoint.'; return; } try { render((await post('/api/branches', { name: $('branch-name').value || 'Новая ветка', checkpoint_id: checkpointId })).state); $('branch-status').textContent = 'Ветка создана и сохранена.'; } catch (error) { $('branch-status').textContent = error.message; } };
+        $('switch-branch').onclick = async () => { const branchId = $('branch-select').value; if (!branchId) { $('branch-status').textContent = 'Сохранённых веток пока нет.'; return; } try { render((await post('/api/branches/switch', { branch_id: branchId })).state); $('branch-status').textContent = `Активная ветка: ${branchId}`; } catch (error) { $('branch-status').textContent = error.message; } };
+        $('reset').onclick = async () => { render(await (await fetch('/api/reset', {method: 'POST'})).json()); };
+        $('clear-chat').onclick = async () => {
+            if (!window.confirm('Очистить диалог и short-term память? Working и long-term сохранятся.')) return;
+            try {
+                const data = await post('/api/chat/clear');
+                $('question').value = '';
+                $('error').textContent = '';
+                setMicStatus('');
+                render(data.state);
+                $('memory-status').textContent = `Чат и short-term память очищены: ${data.removed_short_term_entries} записей.`;
+            } catch (error) {
+                $('error').textContent = error.message;
+            }
+        };
+        $('chat-form').onsubmit = event => { event.preventDefault(); void submitQuestion(); };
+    </script>
+</body>
+</html>
