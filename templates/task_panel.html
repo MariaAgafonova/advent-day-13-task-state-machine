@@ -11,6 +11,8 @@
     .task-flow .current { background: #2563eb; color: white; }
     .task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
     .task-workspace button:disabled { opacity: .45; cursor: default; }
+    .task-workspace button.danger { background: #7f1d1d; color: #fecaca; }
+    .task-delete-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .task-step { border-left: 3px solid #475569; padding: 12px; background: #0f172a; margin: 8px 0; border-radius: 6px; }
     .task-step.completed { border-color: #34d399; }
     .task-step.in_progress { border-color: #60a5fa; }
@@ -48,6 +50,10 @@
         <aside class="task-sidebar">
             <label>Сохранённые задачи<select id="task-select" aria-label="Выбрать задачу"></select></label>
             <button id="task-refresh" type="button" class="secondary">Обновить список</button>
+            <div class="task-delete-actions">
+                <button id="task-delete" type="button" class="danger" disabled>Удалить выбранную</button>
+                <button id="task-clear" type="button" class="danger" disabled>Очистить все задачи</button>
+            </div>
             <p id="task-progress" class="muted"></p>
             <p id="task-id" class="muted"></p>
             <p class="muted">Закрытие страницы и очистка чата сохраняют задачи.</p>

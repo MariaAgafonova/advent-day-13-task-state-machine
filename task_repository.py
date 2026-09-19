@@ -21,6 +21,10 @@ class TaskNotFoundError(TaskError):
     pass
 
 
+class TaskBusyError(TaskError):
+    pass
+
+
 class TaskRepository(ABC):
     @abstractmethod
     def create(self, task: TaskState) -> None: ...
@@ -33,6 +37,15 @@ class TaskRepository(ABC):
 
     @abstractmethod
     def list_tasks(self) -> list[TaskState]: ...
+
+    @abstractmethod
+    def list_task_ids(self) -> list[str]: ...
+
+    @abstractmethod
+    def delete(self, task_id: str) -> None: ...
+
+    @abstractmethod
+    def collection_locked(self): ...
 
     @abstractmethod
     def locked(self, task_id: str): ...
@@ -51,12 +64,23 @@ class JsonTaskRepository(TaskRepository):
         return self.directory / f"{task_id}.json"
 
     @contextmanager
-    def locked(self, task_id: str):
-        key = str(self.path_for(task_id))
+    def collection_locked(self):
+        key = str(self.directory) + ":collection"
         with self._guard:
             lock = self._locks.setdefault(key, RLock())
         with lock:
             yield
+
+    @contextmanager
+    def locked(self, task_id: str):
+        key = str(self.path_for(task_id))
+        # Consistent lock order for create, read, claim and deletion.
+        # The collection lock is released before every network/model call.
+        with self.collection_locked():
+            with self._guard:
+                lock = self._locks.setdefault(key, RLock())
+            with lock:
+                yield
 
     def create(self, task: TaskState) -> None:
         with self.locked(task.task_id):
@@ -113,7 +137,27 @@ class JsonTaskRepository(TaskRepository):
                         pass
 
     def list_tasks(self) -> list[TaskState]:
-        return sorted(
-            (self.get(path.stem) for path in self.directory.glob("task-*.json")),
-            key=lambda task: task.created_at, reverse=True,
-        )
+        with self.collection_locked():
+            return sorted(
+                (self.get(task_id) for task_id in self.list_task_ids()),
+                key=lambda task: task.created_at, reverse=True,
+            )
+
+    def list_task_ids(self) -> list[str]:
+        with self.collection_locked():
+            return sorted(
+                path.stem for path in self.directory.glob("task-*.json")
+                if path.is_file() and re.fullmatch(r"task-[a-zA-Z0-9-]{1,80}", path.stem)
+            )
+
+    def delete(self, task_id: str) -> None:
+        # Delete just the validated task file, including its embedded logs.
+        # Do not recursively remove directories or follow paths from the JSON.
+        path = self.path_for(task_id)
+        with self.locked(task_id):
+            try:
+                path.unlink()
+            except FileNotFoundError as error:
+                raise TaskNotFoundError(f"Задача {task_id} не найдена.") from error
+            except OSError as error:
+                raise TaskError(f"Не удалось удалить задачу {task_id}: {error}") from error

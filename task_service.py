@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from task_llm import TaskBackend, ValidationResult
 from task_models import ExpectedAction, PauseInfo, StepStatus, TaskError, TaskRequestLog, TaskStage, TaskState, utc_now
-from task_repository import TaskRepository
+from task_repository import TaskBusyError, TaskRepository
 from task_state_machine import TaskStateMachine
 
 
@@ -28,6 +28,28 @@ class TaskService:
     def is_busy(self, task_id: str) -> bool:
         with self._active_lock:
             return self._key(task_id) in self._active
+
+    def delete_task(self, task_id: str) -> None:
+        with self.repository.locked(task_id):
+            if self.is_busy(task_id):
+                raise TaskBusyError("Задача выполняет запрос. Дождитесь его завершения перед удалением.")
+            self.repository.delete(task_id)
+
+    def clear_tasks(self) -> list[str]:
+        with self.repository.collection_locked():
+            task_ids = self.repository.list_task_ids()
+            if any(self.is_busy(task_id) for task_id in task_ids):
+                raise TaskBusyError("Есть выполняющийся запрос. Дождитесь его завершения перед очисткой задач.")
+            deleted = []
+            for task_id in task_ids:
+                try:
+                    self.repository.delete(task_id)
+                except TaskError as error:
+                    raise TaskError(
+                        f"Удалено {len(deleted)} из {len(task_ids)} задач. {error}"
+                    ) from error
+                deleted.append(task_id)
+            return deleted
 
     def _save(self, task: TaskState) -> TaskState:
         task.updated_at = utc_now()

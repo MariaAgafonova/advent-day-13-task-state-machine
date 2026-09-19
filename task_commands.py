@@ -3,9 +3,13 @@ from dataclasses import asdict, dataclass
 import json
 
 from task_models import StepStatus, TaskError, TaskStage, TaskState
+from task_repository import TaskNotFoundError
 from task_service import TaskService
 
-COMMANDS = {"/new-task", "/task-status", "/pause-task", "/resume-task", "/continue-task", "/task-logs", "/list-tasks"}
+COMMANDS = {
+    "/new-task", "/task-status", "/pause-task", "/resume-task",
+    "/continue-task", "/task-logs", "/list-tasks", "/delete-task", "/clear-tasks",
+}
 
 
 def task_status(task: TaskState) -> str:
@@ -62,6 +66,20 @@ class TaskCommands:
             return None
         command = parts[0].lower()
         argument = parts[1].strip() if len(parts) > 1 else ""
+        if command == "/clear-tasks":
+            if argument != "--confirm":
+                raise TaskError("Удаление задач и их логов необратимо. Для подтверждения: /clear-tasks --confirm")
+            deleted = self.service.clear_tasks()
+            self.active_task_id = None
+            return CommandResult(f"Удалено сохранённых задач: {len(deleted)}.")
+        if command == "/delete-task":
+            args = argument.split()
+            if len(args) != 2 or args[1] != "--confirm":
+                raise TaskError("Удаление задачи и её логов необратимо. Использование: /delete-task <task_id> --confirm")
+            self.service.delete_task(args[0])
+            if self.active_task_id == args[0]:
+                self.active_task_id = None
+            return CommandResult(f"Задача {args[0]} и её логи удалены.")
         if command == "/list-tasks":
             if argument:
                 raise TaskError("Использование: /list-tasks")
@@ -99,7 +117,11 @@ class TaskCommands:
     def answer_if_waiting(self, message: str) -> CommandResult | None:
         if self.active_task_id is None or message.startswith("/"):
             return None
-        task = self.service.repository.get(self.active_task_id)
+        try:
+            task = self.service.repository.get(self.active_task_id)
+        except TaskNotFoundError:
+            self.active_task_id = None
+            return None
         if task.stage != TaskStage.PLANNING or not any(q.answer is None for q in task.questions):
             return None
         task = self.service.answer_question(task.task_id, message)

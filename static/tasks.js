@@ -14,12 +14,13 @@
     let lastSessionProfile = null;
     let lastLogSignature = '';
     let polling = false;
+    let deleting = false;
     let savedSelection = null;
     try { savedSelection = localStorage.getItem('day13-task'); } catch (_) { /* optional */ }
 
-    async function api(url, body) {
-        const response = await fetch(url, body === undefined ? {} : {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    async function api(url, body, method = body === undefined ? 'GET' : 'POST') {
+        const response = await fetch(url, body === undefined ? {method} : {
+            method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Не удалось выполнить действие');
@@ -92,7 +93,17 @@
         const task = tasks.find(t => t.task_id === selected);
         el('task-empty').classList.toggle('hidden', !!task);
         el('task-detail').classList.toggle('hidden', !task);
-        if (!task) return;
+        el('task-delete').disabled = deleting || !task || isBusy(selected);
+        el('task-clear').disabled = deleting || !tasks.length || !!busy.size || !!serverBusy.size;
+        if (!task) {
+            el('task-progress').textContent = '';
+            el('task-id').textContent = '';
+            el('task-message').textContent = '';
+            el('task-answer').value = '';
+            el('task-logs').replaceChildren();
+            lastLogSignature = '';
+            return;
+        }
         el('task-select').value = selected;
         el('task-id').textContent = task.task_id;
         el('task-goal-title').textContent = task.goal;
@@ -185,6 +196,11 @@
         el('task-mode').textContent = data.mode === 'demo' ? 'OFFLINE · учебный сценарий вакансии' : 'DeepSeek · сохранение в JSON';
         const candidate = preferred || selected || savedSelection;
         if (tasks.length) remember(tasks.some(t => t.task_id === candidate) ? candidate : tasks[0].task_id);
+        else {
+            selected = null;
+            savedSelection = null;
+            try { localStorage.removeItem('day13-task'); } catch (_) { /* optional */ }
+        }
         el('task-select').replaceChildren();
         tasks.forEach(task => {
             const option = document.createElement('option');
@@ -214,6 +230,30 @@
         }
     }
     window.refreshTasks = refresh;
+    async function removeTasks(all) {
+        const task = tasks.find(item => item.task_id === selected);
+        if (deleting || (!all && !task) || (all && !tasks.length)) return;
+        const message = all ?
+            'Удалить все сохранённые задачи (' + tasks.length + ') вместе с результатами и логами? Это действие нельзя отменить.' :
+            'Удалить задачу «' + task.goal + '» вместе с результатами и логами? Это действие нельзя отменить.';
+        if (!window.confirm(message)) return;
+        deleting = true;
+        renderTask();
+        let resultMessage;
+        try {
+            const url = all ? '/api/tasks' : '/api/tasks/' + encodeURIComponent(task.task_id);
+            const result = await api(url, {confirm: true}, 'DELETE');
+            el('task-answer').value = '';
+            resultMessage = 'Удалено задач: ' + result.deleted_count + '.';
+        } catch (error) {
+            resultMessage = error.message;
+        } finally {
+            deleting = false;
+            try { await refresh(); }
+            catch (error) { resultMessage = error.message; }
+            el('task-message').textContent = resultMessage;
+        }
+    }
     el('task-create-form').addEventListener('submit', async event => {
         event.preventDefault();
         const button = event.submitter;
@@ -228,6 +268,8 @@
     el('task-select').addEventListener('change', () => { remember(el('task-select').value); renderTask(); });
     el('task-create-profile').addEventListener('change', () => { selectedProfile = el('task-create-profile').value; });
     el('task-refresh').addEventListener('click', () => refresh().catch(error => { el('task-message').textContent = error.message; }));
+    el('task-delete').addEventListener('click', () => removeTasks(false));
+    el('task-clear').addEventListener('click', () => removeTasks(true));
     el('task-continue').addEventListener('click', () => act('continue'));
     el('task-pause').addEventListener('click', () => act('pause'));
     el('task-resume').addEventListener('click', () => act('resume'));

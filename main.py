@@ -100,7 +100,8 @@ def run_chat(config: AgentConfig) -> int:
         JsonTaskRepository(os.getenv("TASK_DATA_DIR", "data/tasks")), backend,
     ))
     print("Задачи: /new-task <цель>, /task-status <id>, /pause-task <id>, "
-          "/resume-task <id>, /continue-task <id> [ответ], /task-logs <id>, /list-tasks")
+          "/resume-task <id>, /continue-task <id> [ответ], /task-logs <id>, /list-tasks, "
+          "/delete-task <id> --confirm, /clear-tasks --confirm")
     while True:
         try:
             question = input("\nYou: ").strip()

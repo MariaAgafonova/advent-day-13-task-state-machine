@@ -26,7 +26,7 @@ from retrieval import RetrievalStrategy
 from task_commands import TaskCommands
 from task_llm import LLMTaskBackend
 from task_models import TaskError
-from task_repository import JsonTaskRepository, TaskNotFoundError
+from task_repository import JsonTaskRepository, TaskBusyError, TaskNotFoundError
 from task_service import TaskService
 
 
@@ -56,6 +56,31 @@ def task_not_found(error):
 @app.errorhandler(TaskError)
 def task_error(error):
     return jsonify(error=str(error)), 400
+
+
+@app.errorhandler(TaskBusyError)
+def task_busy(error):
+    return jsonify(error=str(error)), 409
+
+
+def require_task_delete_confirmation():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or data.get("confirm") is not True:
+        raise TaskError("Подтвердите удаление задач и их логов: confirm=true.")
+
+
+@app.delete("/api/tasks/<task_id>")
+def delete_task(task_id):
+    require_task_delete_confirmation()
+    get_task_service().delete_task(task_id)
+    return jsonify(deleted_task_ids=[task_id], deleted_count=1)
+
+
+@app.delete("/api/tasks")
+def clear_tasks():
+    require_task_delete_confirmation()
+    deleted = get_task_service().clear_tasks()
+    return jsonify(deleted_task_ids=deleted, deleted_count=len(deleted))
 
 
 @app.get("/api/tasks")
