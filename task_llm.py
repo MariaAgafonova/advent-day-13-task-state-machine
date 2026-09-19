@@ -4,7 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import json
 from typing import Protocol
+from copy import deepcopy
 
+from profile import InMemoryProfileRepository, UserProfile, parse_request_overrides
 from task_context import TaskContextBuilder
 from task_models import TaskError, TaskQuestion, TaskState, TaskStep
 
@@ -42,28 +44,67 @@ def string_list(value, name: str) -> list[str]:
 
 
 class LLMTaskBackend:
+    mode = "llm"
+
     def __init__(self, agent) -> None:
         self.agent = agent
+        self.profile_id = agent.user_id
         self.context = TaskContextBuilder()
         self.last_request = None
 
     def _request(self, task: TaskState, instruction: str) -> dict:
         from agent import ChatAgent
 
+        profile_id = task.profile_id or self.agent.user_id
+        stored_profile = self.agent.profile_repository.get(profile_id)
+        profile = stored_profile or UserProfile.defaults(profile_id)
+        overrides = parse_request_overrides(task.goal)
+        effective = profile.with_updates(overrides)
+        record = next((r for r in task.request_logs if r.request_id == task.operation_id), None)
+        if record:
+            record.model = self.agent.config.model
+            record.profile_id = profile_id
+            record.profile_loaded = stored_profile is not None
+            record.profile_settings = effective.to_dict()
+            record.profile_overrides = overrides.copy()
         # Task calls have independent transient chats. Persisted task state owns progress.
         isolated = ChatAgent(
             client=self.agent._client,
             config=replace(self.agent.config, strategy="sliding_window", memory_storage="in_memory", max_tokens=3072),
-            profile_repository=self.agent.profile_repository,
-            user_id=self.agent.user_id,
+            profile_repository=InMemoryProfileRepository({profile_id: stored_profile} if stored_profile else {}),
+            user_id=profile_id,
         )
-        result = isolated.ask_with_metadata(
-            instruction + "\nReturn one JSON object only, without Markdown fences. "
-            "Use Russian for human-facing content. The JSON schema is mandatory regardless of style preferences.",
-            memory_target="none",
-            task_context=self.context.build(task),
-        )
-        self.last_request = result.request
+        try:
+            result = isolated.ask_with_metadata(
+                instruction + "\nReturn one JSON object only, without Markdown fences. "
+                "Use the effective user profile language, style, level of detail and preferences for all "
+                "human-facing text inside JSON. Explicit preferences in the task goal override the profile. "
+                "The outer JSON schema and its field names remain mandatory.",
+                memory_target="none",
+                task_context=self.context.build(task),
+                profile_overrides=overrides,
+            )
+            if record:
+                record.response = result.answer
+            self.last_request = result.request
+        finally:
+            if record and isolated.logs:
+                log = isolated.logs[-1]
+                record.request = deepcopy({
+                    key: value for key, value in log.request.items()
+                    if key in {"model", "messages", "max_tokens", "temperature", "extra_body"}
+                })
+                record.profile_used = any(
+                    message.get("role") == "system" and "[USER PROFILE]" in message.get("content", "")
+                    for message in record.request.get("messages", [])
+                )
+                metrics = log.token_metrics or {}
+                record.metrics = {
+                    key: metrics[key] for key in (
+                        "prompt_tokens", "completion_tokens", "total_tokens", "cost_usd",
+                        "tokens_source", "request_sent", "context_characters", "context_messages",
+                    ) if key in metrics
+                }
         content = result.answer.strip()
         if content.startswith(chr(96) * 3) and content.endswith(chr(96) * 3):
             content = "\n".join(content.splitlines()[1:-1])

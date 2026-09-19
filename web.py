@@ -44,7 +44,7 @@ def get_task_service() -> TaskService:
     backend = LLMTaskBackend(get_agent())
     if os.getenv("TASK_BACKEND", "llm") == "demo":
         from task_demo import DemoTaskBackend
-        backend = DemoTaskBackend()
+        backend = DemoTaskBackend(profile_id=get_agent().user_id)
     return TaskService(JsonTaskRepository(os.getenv("TASK_DATA_DIR", "data/tasks")), backend)
 
 
@@ -61,8 +61,17 @@ def task_error(error):
 @app.get("/api/tasks")
 def list_tasks():
     service = get_task_service()
-    return jsonify(tasks=[task.to_dict() for task in service.repository.list_tasks()],
-                   mode=os.getenv("TASK_BACKEND", "llm"))
+    current_profile = get_agent().profile_state()
+    available = {
+        profile.id: profile_repository.get_or_default(profile.id).to_dict()
+        for profile in demo_profiles().values()
+    }
+    available[current_profile["profile"]["id"]] = current_profile["profile"]
+    tasks = service.repository.list_tasks()
+    return jsonify(tasks=[task.to_dict() for task in tasks],
+                   mode=os.getenv("TASK_BACKEND", "llm"),
+                   busy_task_ids=[task.task_id for task in tasks if service.is_busy(task.task_id)],
+                   current_profile=current_profile, available_profiles=list(available.values()))
 
 
 @app.get("/api/tasks/<task_id>")
@@ -70,12 +79,19 @@ def get_task(task_id):
     return jsonify(task=get_task_service().repository.get(task_id).to_dict())
 
 
+@app.get("/api/tasks/<task_id>/logs")
+def get_task_logs(task_id):
+    task = get_task_service().repository.get(task_id)
+    return jsonify(task_id=task.task_id, profile_id=task.profile_id,
+                   logs=[asdict(record) for record in task.request_logs])
+
+
 @app.post("/api/tasks")
 def create_task():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         raise TaskError("Ожидается JSON-объект с goal.")
-    task = get_task_service().create_task(data.get("goal"))
+    task = get_task_service().create_task(data.get("goal"), profile_id=data.get("profile_id"))
     return jsonify(task=task.to_dict()), 201
 
 

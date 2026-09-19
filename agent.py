@@ -206,7 +206,9 @@ class ChatAgent:
         )
         selected_user_id = self._select_user_id(user_id)
         profile = self._load_profile(selected_user_id)
-        detected_overrides = parse_request_overrides(current_question or "")
+        # Task requests contain internal protocol instructions. Their words
+        # (e.g. "steps") must not override the user's actual task preferences.
+        detected_overrides = {} if task_context else parse_request_overrides(current_question or "")
         explicit_overrides = normalise_overrides(profile_overrides)
         overrides = {**detected_overrides, **explicit_overrides}
         effective_profile = profile.with_updates(overrides) if overrides else profile

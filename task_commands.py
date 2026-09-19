@@ -1,16 +1,18 @@
 """One command vocabulary for the CLI and Flask chat."""
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+import json
 
 from task_models import StepStatus, TaskError, TaskStage, TaskState
 from task_service import TaskService
 
-COMMANDS = {"/new-task", "/task-status", "/pause-task", "/resume-task", "/continue-task", "/list-tasks"}
+COMMANDS = {"/new-task", "/task-status", "/pause-task", "/resume-task", "/continue-task", "/task-logs", "/list-tasks"}
 
 
 def task_status(task: TaskState) -> str:
     count = sum(s.status == StepStatus.COMPLETED for s in task.steps)
     lines = [f"Задача: {task.task_id}", f"Цель: {task.goal}",
              f"Этап: {task.stage.value}", f"Выполнено: {count} из {len(task.steps)} шагов"]
+    lines.append(f"Профиль задачи: {task.profile_id or 'будет выбран при первом запросе'}")
     current = next((s for s in task.steps if s.id == task.current_step_id), None)
     if current:
         lines.append(f"Текущий шаг: {current.id} — {current.title}")
@@ -25,6 +27,19 @@ def task_status(task: TaskState) -> str:
     if task.stage == TaskStage.DONE:
         lines.append("Задача уже завершена. Продолжение не требуется.")
         lines.append(task.final_result or "")
+    if task.request_logs:
+        record = task.request_logs[-1]
+        lines.append(
+            f"[лог] {record.operation}: {record.status}, {record.elapsed_seconds:.3f} с, "
+            f"токены={record.metrics.get('total_tokens', 0)}, "
+            f"профиль={record.profile_id or '—'}, включён в промпт={record.profile_used}"
+        )
+        if record.profile_used:
+            settings = record.profile_settings
+            lines.append(
+                f"[профиль] язык={settings.get('language')}, стиль={settings.get('responseStyle')}, "
+                f"формат={settings.get('preferredFormat')}, объём={settings.get('responseLength')}"
+            )
     return "\n".join(lines)
 
 
@@ -62,8 +77,14 @@ class TaskCommands:
             extra = args[1] if len(args) > 1 else None
             if extra and command not in {"/continue-task", "/pause-task"}:
                 raise TaskError(f"Использование: {command} <task_id>")
-            if command == "/task-status":
+            if command in {"/task-status", "/task-logs"}:
                 task = self.service.repository.get(task_id)
+                if command == "/task-logs":
+                    self.active_task_id = task_id
+                    return CommandResult(json.dumps(
+                        [asdict(record) for record in task.request_logs],
+                        ensure_ascii=False, indent=2,
+                    ), task)
             elif command == "/pause-task":
                 task = self.service.pause_task(task_id, extra or "Команда пользователя")
             elif command == "/resume-task":

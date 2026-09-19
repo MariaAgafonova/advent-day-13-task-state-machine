@@ -8,6 +8,12 @@
     let tasks = [];
     let selected = null;
     const busy = new Set();
+    let serverBusy = new Set();
+    let profiles = [];
+    let selectedProfile = '';
+    let lastSessionProfile = null;
+    let lastLogSignature = '';
+    let polling = false;
     let savedSelection = null;
     try { savedSelection = localStorage.getItem('day13-task'); } catch (_) { /* optional */ }
 
@@ -23,6 +29,65 @@
         selected = id;
         try { localStorage.setItem('day13-task', id); } catch (_) { /* optional */ }
     }
+    function isBusy(id) { return busy.has(id) || serverBusy.has(id); }
+    function renderLogs(task) {
+        const logs = task.request_logs || [];
+        const signature = task.task_id + JSON.stringify(logs);
+        if (signature === lastLogSignature) return;
+        lastLogSignature = signature;
+        const open = new Set([...el('task-logs').querySelectorAll('details[open][data-request]')].map(item => item.dataset.request));
+        el('task-logs').replaceChildren();
+        el('task-log-count').textContent = '(' + logs.length + ')';
+        const metered = logs.filter(log => log.metrics && log.metrics.tokens_source === 'api');
+        const tokens = metered.reduce((sum, log) => sum + (Number(log.metrics.total_tokens) || 0), 0);
+        const cost = metered.reduce((sum, log) => sum + (Number(log.metrics.cost_usd) || 0), 0);
+        el('task-log-totals').textContent = logs.length ?
+            'Токены по ответам API: ' + tokens + ' · оценка стоимости: $' + cost.toFixed(6) + ' · сохраняются последние 100 записей' :
+            'После первого действия здесь появятся запрос, ответ, токены и применённый профиль.';
+        const operationNames = {plan: 'Планирование', execute: 'Выполнение', validate: 'Проверка'};
+        const logStatuses = {running: 'выполняется', success: 'успешно', error: 'ошибка', interrupted: 'прервано перезапуском'};
+        logs.slice().reverse().forEach(log => {
+            const card = document.createElement('details');
+            card.className = 'task-request-log ' + log.status;
+            card.dataset.request = log.request_id;
+            card.open = open.has(log.request_id);
+            const summary = document.createElement('summary');
+            summary.textContent = new Date(log.started_at).toLocaleTimeString() + ' · ' + (operationNames[log.operation] || log.operation) +
+                (log.step_id ? ' · шаг ' + log.step_id : '') + ' · ' + (logStatuses[log.status] || log.status) +
+                ' · ' + (log.profile_id || 'без профиля') + ' · ' + Number(log.elapsed_seconds).toFixed(2) + ' с';
+            card.append(summary);
+            const info = document.createElement('p');
+            const metrics = log.metrics || {};
+            info.textContent = log.mode === 'llm' ?
+                'Модель: ' + (log.model || 'ожидается') + ' · вход: ' + (metrics.prompt_tokens || 0) +
+                ' · выход: ' + (metrics.completion_tokens || 0) +
+                (metrics.tokens_source && metrics.tokens_source !== 'api' ? ' (оценка до ответа API)' : '') +
+                ' · профиль в промпте: ' + (log.profile_used ? 'да' : 'нет') :
+                (log.mode === 'local' ? 'Локальная проверка без запроса модели.' : 'Offline-сценарий: API и персонализация не используются.');
+            card.append(info);
+            if (log.error) {
+                const error = document.createElement('p');
+                error.className = 'task-log-error';
+                error.textContent = log.error;
+                card.append(error);
+            }
+            [
+                ['Применённый профиль', {profile_id: log.profile_id, loaded_from_storage: log.profile_loaded,
+                    included_in_prompt: log.profile_used, settings: log.profile_settings, overrides: log.profile_overrides}],
+                ['Запрос к модели', log.request],
+                ['Ответ модели', log.response],
+            ].forEach(([label, value]) => {
+                const detail = document.createElement('details');
+                const heading = document.createElement('summary');
+                heading.textContent = label;
+                const pre = document.createElement('pre');
+                pre.textContent = value == null ? 'Нет данных' : typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+                detail.append(heading, pre);
+                card.append(detail);
+            });
+            el('task-logs').append(card);
+        });
+    }
     function renderTask() {
         const task = tasks.find(t => t.task_id === selected);
         el('task-empty').classList.toggle('hidden', !!task);
@@ -31,6 +96,23 @@
         el('task-select').value = selected;
         el('task-id').textContent = task.task_id;
         el('task-goal-title').textContent = task.goal;
+        const logs = task.request_logs || [];
+        const applied = logs.slice().reverse().find(log => log.profile_used);
+        const profile = applied && Object.keys(applied.profile_settings || {}).length ? applied.profile_settings :
+            profiles.find(item => item.id === task.profile_id) || {};
+        el('task-profile-title').textContent = 'Профиль задачи: ' + (task.profile_id || 'будет выбран при первом запросе');
+        el('task-profile-summary').textContent = profile.id ?
+            'Язык: ' + profile.language + ' · стиль: ' + profile.responseStyle +
+            ' · формат: ' + profile.preferredFormat + ' · объём: ' + profile.responseLength :
+            'Настройки появятся после первого запроса.';
+        el('task-profile-note').textContent = applied ?
+            'Показаны настройки последнего запроса. Профиль закреплён за задачей и сохраняется после перезапуска.' :
+            logs.length && logs[logs.length - 1].mode === 'demo' ?
+                'Offline-сценарий сохраняет выбранный профиль, но не применяет его к демонстрационному ответу.' :
+                'Этот профиль будет использован при работе. Язык и формат из цели задачи имеют приоритет.';
+        el('task-profile-json').textContent = JSON.stringify({
+            profile_id: task.profile_id, settings: profile, overrides: applied ? applied.profile_overrides : {}
+        }, null, 2);
         const completed = task.steps.filter(s => s.status === 'completed').length;
         el('task-progress').textContent = 'Выполнено: ' + completed + ' из ' + task.steps.length + '. Этап: ' + task.stage;
         el('task-flow').replaceChildren();
@@ -45,13 +127,13 @@
         const waiting = task.stage === 'planning' && action && action.actor === 'user';
         el('task-answer-form').classList.toggle('hidden', !waiting);
         el('task-question-label').textContent = waiting ? action.description : '';
-        el('task-continue').disabled = busy.has(selected) || waiting || ['paused', 'done'].includes(task.stage);
-        el('task-continue').textContent = busy.has(selected) ? 'Агент работает…' :
+        el('task-continue').disabled = isBusy(selected) || waiting || ['paused', 'done'].includes(task.stage);
+        el('task-continue').textContent = isBusy(selected) ? 'Агент работает…' :
             task.stage === 'planning' ? 'Составить план' : task.stage === 'validation' ? 'Проверить результат' :
             task.stage === 'failed' ? 'Повторить шаг' : 'Выполнить следующий шаг';
         el('task-pause').disabled = ['paused', 'done'].includes(task.stage);
         el('task-resume').classList.toggle('hidden', task.stage !== 'paused');
-        el('task-answer-form').querySelector('button').disabled = busy.has(selected);
+        el('task-answer-form').querySelector('button').disabled = isBusy(selected);
         el('task-steps').replaceChildren();
         task.steps.forEach(step => {
             const card = document.createElement('div');
@@ -80,12 +162,26 @@
             el('task-transitions').append(row);
         });
         el('task-json').textContent = JSON.stringify(task, null, 2);
+        renderLogs(task);
         el('task-message').textContent = task.last_error || task.validation_issues.join('\n') ||
-            (busy.has(selected) ? 'Запрос выполняется. Кнопка «Пауза» доступна.' : '');
+            (isBusy(selected) ? 'Запрос выполняется. Кнопка «Пауза» доступна.' : '');
     }
     async function refresh(preferred) {
         const data = await api('/api/tasks');
         tasks = data.tasks;
+        serverBusy = new Set(data.busy_task_ids || []);
+        profiles = data.available_profiles || [];
+        const sessionProfile = data.current_profile && data.current_profile.profile.id;
+        if (!selectedProfile || selectedProfile === lastSessionProfile) selectedProfile = sessionProfile;
+        lastSessionProfile = sessionProfile;
+        el('task-create-profile').replaceChildren();
+        profiles.forEach(profile => {
+            const option = document.createElement('option');
+            option.value = profile.id;
+            option.textContent = (profile.name || profile.id) + ' · ' + profile.language + ' · ' + profile.responseLength;
+            el('task-create-profile').append(option);
+        });
+        el('task-create-profile').value = selectedProfile;
         el('task-mode').textContent = data.mode === 'demo' ? 'OFFLINE · учебный сценарий вакансии' : 'DeepSeek · сохранение в JSON';
         const candidate = preferred || selected || savedSelection;
         if (tasks.length) remember(tasks.some(t => t.task_id === candidate) ? candidate : tasks[0].task_id);
@@ -123,13 +219,14 @@
         const button = event.submitter;
         button.disabled = true;
         try {
-            const data = await api('/api/tasks', {goal: el('task-goal').value});
+            const data = await api('/api/tasks', {goal: el('task-goal').value, profile_id: el('task-create-profile').value});
             el('task-goal').value = '';
             await refresh(data.task.task_id);
         } catch (error) { el('task-message').textContent = error.message; }
         finally { button.disabled = false; }
     });
     el('task-select').addEventListener('change', () => { remember(el('task-select').value); renderTask(); });
+    el('task-create-profile').addEventListener('change', () => { selectedProfile = el('task-create-profile').value; });
     el('task-refresh').addEventListener('click', () => refresh().catch(error => { el('task-message').textContent = error.message; }));
     el('task-continue').addEventListener('click', () => act('continue'));
     el('task-pause').addEventListener('click', () => act('pause'));
@@ -139,4 +236,11 @@
         act('continue', {answer: el('task-answer').value});
     });
     refresh().catch(error => { el('task-message').textContent = error.message; });
+    setInterval(async () => {
+        if (polling || (!busy.size && !serverBusy.size)) return;
+        polling = true;
+        try { await refresh(); }
+        catch (error) { el('task-message').textContent = error.message; }
+        finally { polling = false; }
+    }, 1500);
 })();

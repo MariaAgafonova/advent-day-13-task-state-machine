@@ -2,7 +2,7 @@
     .task-workspace { margin-bottom: 20px; border-color: #3b82f6; background: linear-gradient(120deg, #172554, #111827 58%); }
     .task-intro { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
     .task-intro h2 { margin-bottom: 6px; }
-    .task-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin: 16px 0; }
+    .task-create { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, .35fr) auto; gap: 10px; margin: 16px 0; align-items: end; }
     .task-create input { width: 100%; }
     .task-layout { display: grid; grid-template-columns: minmax(220px, .38fr) minmax(0, 1fr); gap: 20px; }
     .task-sidebar select { width: 100%; margin-bottom: 10px; }
@@ -23,6 +23,15 @@
     .task-question { padding: 12px; border: 1px solid #6366f1; border-radius: 8px; }
     .task-question input { width: 100%; margin: 8px 0; }
     .task-history { font-size: .85rem; color: #cbd5e1; line-height: 1.8; }
+    .task-profile-card { padding: 12px; margin: 12px 0; border: 1px solid #6366f1; border-radius: 9px; background: #172554; }
+    .task-profile-card p { margin: 6px 0; }
+    #task-logs { display: grid; gap: 8px; margin-top: 10px; max-height: 600px; overflow: auto; }
+    .task-request-log { border: 1px solid #334155; border-radius: 8px; padding: 10px; background: #0b1220; }
+    .task-request-log.error, .task-request-log.interrupted { border-color: #b45309; }
+    .task-request-log.running { border-color: #60a5fa; }
+    .task-request-log summary { cursor: pointer; line-height: 1.6; overflow-wrap: anywhere; }
+    .task-request-log pre { overflow-wrap: anywhere; max-height: 300px; font-size: .8rem; }
+    .task-log-error { color: #fca5a5; white-space: pre-wrap; overflow-wrap: anywhere; }
     @media (max-width: 700px) { .task-layout, .task-create { grid-template-columns: 1fr; } }
 </style>
 <section class="panel task-workspace" aria-labelledby="task-heading">
@@ -32,6 +41,7 @@
     </div>
     <form id="task-create-form" class="task-create">
         <label>Новая задача<input id="task-goal" maxlength="3000" placeholder="Подготовить краткое описание вакансии Android-разработчика" required></label>
+        <label>Профиль для задачи<select id="task-create-profile" aria-label="Профиль новой задачи"></select></label>
         <button type="submit">Создать задачу</button>
     </form>
     <div class="task-layout">
@@ -46,6 +56,12 @@
             <p id="task-empty" class="muted">Создайте задачу, чтобы начать планирование.</p>
             <div id="task-detail" class="hidden">
                 <h3 id="task-goal-title"></h3>
+                <div class="task-profile-card">
+                    <strong id="task-profile-title"></strong>
+                    <p id="task-profile-summary"></p>
+                    <p id="task-profile-note" class="muted"></p>
+                    <details><summary>Настройки профиля и переопределения</summary><pre id="task-profile-json"></pre></details>
+                </div>
                 <div id="task-flow" class="task-flow" aria-label="Этапы задачи"></div>
                 <p id="task-next"></p>
                 <div class="task-actions">
@@ -60,6 +76,11 @@
                 </form>
                 <div id="task-steps"></div>
                 <p id="task-final" class="hidden"></p>
+                <details open>
+                    <summary>Логи запросов <span id="task-log-count"></span></summary>
+                    <p id="task-log-totals" class="muted"></p>
+                    <div id="task-logs" aria-live="polite"></div>
+                </details>
                 <details><summary>Собранные данные и критерии готовности</summary><pre id="task-inputs"></pre></details>
                 <details open><summary>Журнал переходов</summary><ol id="task-transitions" class="task-history"></ol></details>
                 <details><summary>Сохранённое состояние JSON</summary><pre id="task-json"></pre></details>

@@ -18,7 +18,10 @@ GOAL = "Подготовить краткое описание вакансии 
 
 class DemoTaskBackend:
     """An explicitly offline model double for a repeatable teaching example."""
-    def __init__(self):
+    mode = "demo"
+
+    def __init__(self, profile_id=None):
+        self.profile_id = profile_id
         self.executed: list[int] = []
         self.plan_calls = 0
         self.validation_calls = 0

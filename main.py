@@ -94,13 +94,13 @@ def run_chat(config: AgentConfig) -> int:
     backend = LLMTaskBackend(agent)
     if os.getenv("TASK_BACKEND", "llm") == "demo":
         from task_demo import DemoTaskBackend
-        backend = DemoTaskBackend()
+        backend = DemoTaskBackend(profile_id=agent.user_id)
         print("OFFLINE DEMO: используется учебная задача о вакансии Android-разработчика.")
     commands = TaskCommands(TaskService(
         JsonTaskRepository(os.getenv("TASK_DATA_DIR", "data/tasks")), backend,
     ))
     print("Задачи: /new-task <цель>, /task-status <id>, /pause-task <id>, "
-          "/resume-task <id>, /continue-task <id> [ответ], /list-tasks")
+          "/resume-task <id>, /continue-task <id> [ответ], /task-logs <id>, /list-tasks")
     while True:
         try:
             question = input("\nYou: ").strip()

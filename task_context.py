@@ -12,6 +12,7 @@ class TaskContextBuilder:
         lines = [
             "TASK STATE (source of truth for task progress)",
             f"Task ID: {task.task_id}", f"Goal: {clip(task.goal, 3000)}",
+            f"Profile ID: {task.profile_id or 'not selected'}",
             f"Stage: {task.stage.value}",
             f"Current step: {current.id} — {current.title}" if current else "Current step: none",
             "Collected information:",

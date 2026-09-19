@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 from threading import RLock
+from time import perf_counter
 from uuid import uuid4
 
 from task_llm import TaskBackend, ValidationResult
-from task_models import ExpectedAction, PauseInfo, StepStatus, TaskError, TaskStage, TaskState, utc_now
+from task_models import ExpectedAction, PauseInfo, StepStatus, TaskError, TaskRequestLog, TaskStage, TaskState, utc_now
 from task_repository import TaskRepository
 from task_state_machine import TaskStateMachine
 
@@ -56,15 +58,21 @@ class TaskService:
             f"Выполнить шаг {step.id}: {step.title}" if step else "Проверить результат по цели и критериям",
         ))
 
-    def create_task(self, goal: str) -> TaskState:
+    def create_task(self, goal: str, profile_id: str | None = None) -> TaskState:
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 3000:
             raise TaskError("Укажите цель задачи: от 1 до 3000 символов.")
+        selected_profile = profile_id if profile_id is not None else getattr(self.backend, "profile_id", None)
+        if selected_profile is not None:
+            if not isinstance(selected_profile, str) or not selected_profile.strip() or len(selected_profile) > 200:
+                raise TaskError("profile_id должен быть непустой строкой до 200 символов.")
+            selected_profile = selected_profile.strip()
         now = utc_now()
         task = TaskState(
             task_id=f"task-{uuid4().hex[:16]}", goal=goal.strip(),
             stage=TaskStage.PLANNING, current_step_id=None, steps=[],
             expected_action=ExpectedAction("agent", "create_plan", "Проанализировать цель и составить план"),
             pause_info=None, validation_issues=[], final_result=None, created_at=now, updated_at=now,
+            profile_id=selected_profile,
         )
         self.repository.create(task)
         return task
@@ -76,6 +84,20 @@ class TaskService:
                 raise TaskError("Действие этой задачи уже выполняется. Можно поставить его на паузу.")
             self._active.add(key)
         task.operation_id = uuid4().hex
+        if task.profile_id is None:
+            task.profile_id = getattr(self.backend, "profile_id", None)
+        for record in task.request_logs:
+            if record.status == "running":
+                record.status = "interrupted"
+                record.finished_at = utc_now()
+                record.error = "Предыдущий процесс завершился до сохранения ответа."
+        task.request_logs.append(TaskRequestLog(
+            request_id=task.operation_id,
+            operation={TaskStage.PLANNING: "plan", TaskStage.EXECUTION: "execute", TaskStage.VALIDATION: "validate"}[task.stage],
+            stage=task.stage.value, step_id=task.current_step_id, started_at=utc_now(),
+            mode=getattr(self.backend, "mode", "demo"), profile_id=task.profile_id,
+        ))
+        task.request_logs = task.request_logs[-100:]
         try:
             return self._save(task)
         except Exception:
@@ -90,12 +112,40 @@ class TaskService:
         task = self.repository.get(snapshot.task_id)
         if task.operation_id != snapshot.operation_id:
             raise TaskError("Ответ относится к устаревшей операции; сохранённое состояние не изменено.")
+        record = next((r for r in snapshot.request_logs if r.request_id == snapshot.operation_id), None)
+        if record:
+            task.request_logs = [
+                deepcopy(record) if r.request_id == record.request_id else r for r in task.request_logs
+            ]
         return task
+
+    def _call(self, snapshot: TaskState, method, *args):
+        record = next(r for r in snapshot.request_logs if r.request_id == snapshot.operation_id)
+        started = perf_counter()
+        try:
+            result = method(snapshot, *args)
+            record.status = "success"
+            return result
+        except Exception as error:
+            record.status, record.error = "error", str(error)
+            raise
+        finally:
+            record.finished_at = utc_now()
+            record.elapsed_seconds = round(perf_counter() - started, 3)
+            logging.getLogger(__name__).info(
+                "Task request task_id=%s operation=%s step=%s status=%s profile=%s profile_used=%s tokens=%s elapsed=%.3fs",
+                snapshot.task_id, record.operation, record.step_id, record.status,
+                record.profile_id, record.profile_used, record.metrics.get("total_tokens", 0), record.elapsed_seconds,
+            )
 
     def _failure(self, snapshot: TaskState, error: Exception) -> TaskState:
         with self.repository.locked(snapshot.task_id):
             task = self._latest(snapshot)
             task.last_error = str(error)
+            record = next((r for r in task.request_logs if r.request_id == snapshot.operation_id), None)
+            if record:
+                record.status, record.error = "error", str(error)
+                record.finished_at = record.finished_at or utc_now()
             task.operation_id = None
             stage = self._effective_stage(task)
             if stage == TaskStage.EXECUTION:
@@ -123,7 +173,7 @@ class TaskService:
                 return self.machine.transition(task, TaskStage.EXECUTION, "Сохранённый план готов")
             snapshot = deepcopy(self._claim(task))
         try:
-            plan = self.backend.plan(snapshot)
+            plan = self._call(snapshot, self.backend.plan)
             with self.repository.locked(task_id):
                 task = self._latest(snapshot)
                 task.operation_id, task.last_error = None, None
@@ -186,7 +236,7 @@ class TaskService:
                 return task
             snapshot = deepcopy(self._claim(task))
         try:
-            result = self.backend.execute(snapshot, self._step(snapshot))
+            result = self._call(snapshot, self.backend.execute, self._step(snapshot))
             if not isinstance(result, str) or not result.strip():
                 raise TaskError("Шаг не вернул результат.")
             with self.repository.locked(task_id):
@@ -238,8 +288,10 @@ class TaskService:
                     [f"Шаг {s.id}: отсутствует результат или осталась ошибка" for s in broken],
                     [s.id for s in broken],
                 )
+                record = snapshot.request_logs[-1]
+                record.mode, record.status, record.finished_at = "local", "success", utc_now()
             else:
-                check = self.backend.validate(snapshot)
+                check = self._call(snapshot, self.backend.validate)
             with self.repository.locked(task_id):
                 task = self._latest(snapshot)
                 task.operation_id, task.last_error = None, None

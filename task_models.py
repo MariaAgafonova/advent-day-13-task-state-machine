@@ -79,6 +79,29 @@ class TaskQuestion:
 
 
 @dataclass
+class TaskRequestLog:
+    request_id: str
+    operation: str
+    stage: str
+    step_id: int | None
+    started_at: str
+    status: str = "running"
+    finished_at: str | None = None
+    elapsed_seconds: float = 0.0
+    mode: str = "demo"
+    model: str | None = None
+    profile_id: str | None = None
+    profile_loaded: bool = False
+    profile_used: bool = False
+    profile_settings: dict[str, Any] = field(default_factory=dict)
+    profile_overrides: dict[str, Any] = field(default_factory=dict)
+    request: dict[str, Any] | None = None
+    response: str | None = None
+    metrics: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+
+
+@dataclass
 class TaskState:
     task_id: str
     goal: str
@@ -97,6 +120,8 @@ class TaskState:
     last_error: str | None = None
     operation_id: str | None = None
     schema_version: int = 1
+    profile_id: str | None = None
+    request_logs: list[TaskRequestLog] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -127,6 +152,7 @@ class TaskState:
                 }) for item in data.get("transition_history", [])
             ]
             data["questions"] = [TaskQuestion(**item) for item in data.get("questions", [])]
+            data["request_logs"] = [TaskRequestLog(**item) for item in data.get("request_logs", [])]
             task = cls(**data)
             task.check()
             return task
@@ -138,6 +164,13 @@ class TaskState:
             raise TaskError("Некорректный task_id.")
         if not isinstance(self.goal, str) or not self.goal.strip():
             raise TaskError("Цель задачи не может быть пустой.")
+        if self.profile_id is not None and (
+            not isinstance(self.profile_id, str) or not self.profile_id.strip() or len(self.profile_id) > 200
+        ):
+            raise TaskError("profile_id должен быть непустой строкой до 200 символов.")
+        for record in self.request_logs:
+            if record.status not in {"running", "success", "error", "interrupted"}:
+                raise TaskError("Неизвестный статус записи лога.")
         ids = [step.id for step in self.steps]
         if len(ids) != len(set(ids)) or any(type(value) is not int or value < 1 for value in ids):
             raise TaskError("ID шагов должны быть уникальными положительными числами.")
